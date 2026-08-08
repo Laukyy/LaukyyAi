@@ -142,7 +142,7 @@ export async function POST(req: Request) {
           },
           contents,
           generationConfig: {
-            maxOutputTokens: 500,
+            maxOutputTokens: 300,
           },
         }),
       }
