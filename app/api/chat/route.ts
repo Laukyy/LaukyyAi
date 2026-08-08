@@ -1,8 +1,5 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { LAUKY_SYSTEM_PROMPT } from "@/lib/systemPrompt";
 
-// Route ini jalan di server (Node runtime), jadi API key AMAN,
-// tidak pernah dikirim ke browser/frontend.
 export const runtime = "nodejs";
 
 type ChatMessage = {
@@ -12,15 +9,17 @@ type ChatMessage = {
 
 export async function POST(req: Request) {
   try {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
+    const apiKey = process.env.GEMINI_API_KEY;
 
     if (!apiKey) {
       return new Response(
         JSON.stringify({
-          error:
-            "ANTHROPIC_API_KEY belum di-set di server. Cek file .env kamu, bro.",
+          error: "GEMINI_API_KEY belum di-set di server.",
         }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
+        {
+          status: 500,
+          headers: { "Content-Type": "application/json" },
+        }
       );
     }
 
@@ -30,66 +29,74 @@ export async function POST(req: Request) {
     if (!Array.isArray(messages) || messages.length === 0) {
       return new Response(
         JSON.stringify({ error: "Format pesan tidak valid." }),
-        { status: 400, headers: { "Content-Type": "application/json" } }
+        {
+          status: 400,
+          headers: { "Content-Type": "application/json" },
+        }
       );
     }
 
-    const anthropic = new Anthropic({ apiKey });
-    const model = process.env.LAUKY_MODEL || "claude-sonnet-4-5-20250929";
+    const contents = messages.map((message) => ({
+      role: message.role === "assistant" ? "model" : "user",
+      parts: [{ text: message.content }],
+    }));
 
-    // Bikin ReadableStream supaya frontend bisa nampilin jawaban
-    // sedikit demi sedikit (efek "ngetik") alih-alih nunggu full response.
-    const encoder = new TextEncoder();
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          systemInstruction: {
+            parts: [{ text: LAUKY_SYSTEM_PROMPT }],
+          },
+          contents,
+        }),
+      }
+    );
 
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          const anthropicStream = anthropic.messages.stream({
-            model,
-            max_tokens: 4096,
-            system: LAUKY_SYSTEM_PROMPT,
-            messages: messages.map((m) => ({
-              role: m.role,
-              content: m.content,
-            })),
-          });
+    const data = await response.json();
 
-          anthropicStream.on("text", (text) => {
-            controller.enqueue(encoder.encode(text));
-          });
+    if (!response.ok) {
+      console.error("Gemini API error:", data);
 
-          anthropicStream.on("error", (err) => {
-            console.error("Anthropic stream error:", err);
-            controller.enqueue(
-              encoder.encode(
-                "\n\n[Error: koneksi ke AI kepotong. Coba kirim ulang pesannya, bro.]"
-              )
-            );
-            controller.close();
-          });
-
-          await anthropicStream.finalMessage();
-          controller.close();
-        } catch (err) {
-          console.error("Stream setup error:", err);
-          controller.error(err);
+      return new Response(
+        JSON.stringify({
+          error:
+            data?.error?.message ||
+            "Gagal menghubungi Gemini API.",
+        }),
+        {
+          status: response.status,
+          headers: { "Content-Type": "application/json" },
         }
-      },
-    });
+      );
+    }
 
-    return new Response(stream, {
+    const text =
+      data?.candidates?.[0]?.content?.parts
+        ?.map((part: { text?: string }) => part.text || "")
+        .join("") || "";
+
+    return new Response(text, {
       headers: {
         "Content-Type": "text/plain; charset=utf-8",
         "Cache-Control": "no-cache",
       },
     });
-  } catch (err) {
-    console.error("Chat API error:", err);
+  } catch (error) {
+    console.error("Gemini server error:", error);
+
     return new Response(
       JSON.stringify({
-        error: "Terjadi kesalahan di server. Cek log server untuk detail.",
+        error: "Terjadi kesalahan di server Lauky AI.",
       }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
+      {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      }
     );
   }
-      }
+}
