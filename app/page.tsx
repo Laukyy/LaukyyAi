@@ -2,10 +2,9 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Menu } from "lucide-react";
-import ChatMessage, { Role } from "@/components/ChatMessage";
-import ChatInput from "@/components/ChatInput";
-import Sidebar, { Conversation } from "@/components/Sidebar";
-
+import ChatMessage, { Role } from "../components/ChatMessage";
+import ChatInput from "../components/ChatInput";
+import Sidebar, { Conversation } from "../components/Sidebar";
 type Message = {
   role: Role;
   content: string;
